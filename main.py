@@ -14,7 +14,72 @@ from selenium.webdriver.common.action_chains import ActionChains
 import csv
 import requests
 import shutil
+import os
+IMGFOLDER = os.getcwd() + '/images/'
 
+
+class BingImage(object):
+    """docstring for BingImage"""
+    BINGURL = 'http://www.bing.com/'
+    JSONURL = 'HPImageArchive.aspx?format=js&idx=0&n=1&mkt=pt-BR'
+    LASTIMG = None
+
+    def __init__(self):
+        super(BingImage, self).__init__()
+        try:
+            self.downloadimg()
+        except:
+            pass
+    def setURL(self, URL):
+        self.URL = URL
+    def getdailyimg(self):
+        import json
+        import urllib.request
+        with urllib.request.urlopen(self.URL) as response:
+            rawjson = response.read().decode('utf-8')
+            parsedjson = json.loads(rawjson)
+            return self.BINGURL + parsedjson['images'][0]['url'][1:]
+
+    def downloadimg(self):
+        import datetime
+        imgurl = self.getdailyimg()
+        imgfilename = datetime.datetime.today().strftime('%Y%m%d') + '_' + imgurl.split('/')[-1]
+        with open(IMGFOLDER + imgfilename, 'wb') as f:
+            f.write(self.readimg(imgurl))
+        self.LASTIMG = IMGFOLDER + imgfilename
+
+    def checkfolder(self):
+        d = os.path.dirname(IMGFOLDER)
+        if not os.path.exists(d):
+            os.makedirs(d)
+
+    def readimg(self, url):
+        import urllib.request
+        with urllib.request.urlopen(url) as response:
+            return response.read()
+
+
+def DefineBackground(src):
+    import platform
+    if platform.system() == 'Linux':
+        MAINCMD = "gsettings set org.gnome.desktop.background picture-uri"
+        os.system(MAINCMD + ' file://' + src)
+
+
+def GetRandomImg():
+    """Return a random image already downloaded from the images folder"""
+    import random
+    f = []
+    for (dirpath, dirnames, filenames) in os.walk(IMGFOLDER):
+        f.extend(filenames)
+        break
+    return IMGFOLDER + random.choice(f)
+
+
+if __name__ == '__main__':
+    # get a new today's image from Bing
+    img = BingImage()
+    
 def setdriver():
     options = Options()
     options.add_argument("window-size={},{}".format(1920, 1080))
@@ -35,22 +100,19 @@ def getActressesFromWiki(driver):
         one_dic['link_url'] = link_ele.get_attribute('href')
         return_array.append(one_dic)
         print(one_dic)
-        if index > 30 :
-            break
+        # if index>5:
+        #     break
+       
     return return_array
-def downloadImageFile(image_url):
+def downloadImageFile(image_url, actress, image_count):
+    
     filename = image_url.split("/")[-1]
 
-    # Open the url image, set stream to True, this will return the stream content.
     r = requests.get(image_url, stream = True)
-
-    # Check if the image was retrieved successfully
+    sleep(3)
     if r.status_code == 200:
-        # Set decode_content value to True, otherwise the downloaded image file's size will be zero.
         r.raw.decode_content = True
-        
-        # Open a local file with wb ( write binary ) permission.
-        with open(filename,'wb') as f:
+        with open('images/'+str(actress['id'])+'_' + str(image_count) + '_'+filename,'wb') as f:
             shutil.copyfileobj(r.raw, f)
             
         print('Image sucessfully Downloaded: ',filename)
@@ -66,6 +128,8 @@ def getDetailsForActress(actress):
         details.append(detail)
     actress['details'] = details
     images_eles = driver.find_elements(By.XPATH, '//a[@class="image"]/img')
+    image_count = 1
+    photos = []
     for image_ele in images_eles:
         image_url = image_ele.get_attribute('src')
         if not ".jpg" in image_url:
@@ -73,12 +137,22 @@ def getDetailsForActress(actress):
         else:
             image_thumbnail_url = image_url.split(".jpg")[0]+".jpg"
             image_url = image_thumbnail_url.replace('thumb/', '', 1)
-        downloadImageFile(image_url)
+        photos.append(image_url)
+        # downloadImageFile(image_url, actress, image_count)
+
+        image_count += 1
+    actress['photos'] = photos
     return actress
 if __name__ == "__main__":
+
+    # img = BingImage()
     driver = setdriver()
     actresses = getActressesFromWiki(driver)
-    for actress in actresses:
-        actress_details = getDetailsForActress(actress)
-        # print(actress_details)
+    
+    with open('result.csv', mode='w', encoding='utf-8') as result_file:
+        csv_writer = csv.DictWriter(result_file, fieldnames=list(actresses[0].keys())+['details','photos'])
+        csv_writer.writeheader()
+        for actress in actresses:
+            actress_details = getDetailsForActress(actress)
+            csv_writer.writerow(actress_details)
 
